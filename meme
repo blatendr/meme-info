@@ -68,10 +68,11 @@ info_list = []
 ##
 ##
 ## grab the latest 50 pages of data and append them into a list of dictionaries
+Client_ID = #ENTER YOUR CLIENT ID HERE, you can get one at:http://api.imgur.com/#authentication 
 for j in range(0,50):    
         
     url = 'https://api.imgur.com/3/g/memes/time/'+str(j)+'.json'
-    url_request = Request(url, headers={"Authorization": 'Client-ID 31b3372a9b6c8ab'})
+    url_request = Request(url, headers={"Authorization": Client_ID})
     
     webpage = urlopen(url_request).read()
     txt = webpage.decode('utf-8')

@@ -1,0 +1,248 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Nov 13 12:02:50 2016
+
+@author: Brad
+"""
+
+import sys, os
+import sqlite3
+import numpy as np
+from urllib.request import urlretrieve
+from PIL import Image
+import matplotlib.pyplot as plt
+
+import cv2
+
+
+from skimage.measure import structural_similarity as ssim
+
+import datetime
+
+
+##start of by creating DB for data to be stored
+if __name__ == '__main__':
+    
+    db_file = "Meme.db"
+    
+
+    
+    conn = sqlite3.connect(db_file)
+    c = conn.cursor()
+#
+#    c.execute("Drop table meme_data")
+#    conn.commit()
+#        
+#    
+    # questions table, and some fake data:
+    c.execute("CREATE TABLE meme_data (id INTEGER PRIMARY KEY ASC, ups int, downs int, title text, datetime datetime, account text, topic text, link text, views int, descript text, comments int, meme_id int, mse_num int)")
+    conn.commit()
+
+
+#define MSE function to be used to compare images, impletmented from:http://www.pyimagesearch.com/2014/09/15/python-compare-two-images/
+def mse(imageA, imageB):
+	# the 'Mean Squared Error' between the two images is the
+	# sum of the squared difference between the two images;
+	# NOTE: the two images must have the same dimension
+	err = np.sum((imageA.astype("float") - imageB.astype("float")) ** 2)
+	err /= float(imageA.shape[0] * imageA.shape[1])
+	
+	# return the MSE, the lower the error, the more "similar"
+	# the two images are
+	return err
+
+
+from urllib.request import Request, urlopen
+import json
+#
+
+info_list = []
+
+#
+
+    
+
+
+
+
+##
+##
+## grab the latest 50 pages of data and append them into a list of dictionaries
+for j in range(0,50):    
+        
+    url = 'https://api.imgur.com/3/g/memes/time/'+str(j)+'.json'
+    url_request = Request(url, headers={"Authorization": 'Client-ID 31b3372a9b6c8ab'})
+    
+    webpage = urlopen(url_request).read()
+    txt = webpage.decode('utf-8')
+    info1 = json.loads(txt)
+    info_list.extend(info1['data'])
+    print(j)
+###    
+#####
+#####
+#####
+#####
+meme_list = []
+
+
+#some memes prooved troublesome to identify if they happend mid stream, so i initialized them here
+urlretrieve("http://i.imgur.com/X90mUmW.png", "data/kermit.jpg")
+img_ker = cv2.imread("data/kermit.jpg")
+resized_kermit= cv2.resize(img_ker, (300, 300))
+cv2.imwrite("data/kermit.jpg",resized_kermit)
+meme_list.append("data/kermit.jpg")
+
+
+counter =0
+
+
+#main for loop of the program, collects data from dictionary and inserts it into my DB
+mse_amounts =[]
+for meme in info_list:
+    
+    counter +=1
+    link =meme['link']
+ 
+     #dont want gifs or non picture things   
+    if (link[-3:] == "png" or link[-3:] == "jpg"):
+        
+        #retrieve image from url and save it
+        urlretrieve(meme['link'], ("data/"+meme['id']+".jpg"))
+#       
+        #read image back into program and resize it 
+        img = cv2.imread("data/"+meme['id']+".jpg")
+        resized_image = cv2.resize(img, (300, 300))
+
+         #get my timestamp in datetime  
+        tw =datetime.datetime.fromtimestamp(meme['datetime']).strftime('%Y-%m-%d %H') 
+#       
+        
+        #this is the image comparer, it loops through all unique memes and finds image it is most similar too
+        num_meme= -1
+        #intialize memes to be non similar        
+        similar_meme = False
+        lowest_mse = 99999999        
+        for i in range(0,len(meme_list)):
+            img_compare = cv2.imread(meme_list[i])
+            mse_num = int(mse(img_compare,resized_image))
+            mse_amounts.append(mse_num)
+            
+            if (mse_num < 21000):
+                if (lowest_mse > mse_num):
+                    lowest_mse = mse_num                
+                    similar_meme = True
+                    num_meme = i
+                    
+                 
+                
+                
+                
+        if (similar_meme == False):
+            c.execute("INSERT INTO meme_data (ups,downs, title, datetime, account, topic, link, views, descript, comments, meme_id, mse_num) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",(meme['ups'],meme['downs'],meme['title'], tw, meme['account_url'], meme['topic'], meme['link'], meme['views'], meme['description'],meme['comment_count'],(len(meme_list)),lowest_mse))
+            meme_list.append(("data/"+meme['id']+".jpg"))            
+            cv2.imwrite("data/"+meme['id']+".jpg",resized_image)
+        if (similar_meme == True):
+            c.execute("INSERT INTO meme_data (ups,downs, title, datetime, account, topic, link, views, descript, comments, meme_id, mse_num) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",(meme['ups'],meme['downs'],meme['title'], tw, meme['account_url'], meme['topic'], meme['link'], meme['views'], meme['description'],meme['comment_count'],num_meme,lowest_mse ))
+            os.remove("data/"+meme['id']+".jpg")
+        conn.commit()     
+
+##            
+        
+     
+import pandas as pd
+
+
+
+
+##code for making plots
+
+###plot 1
+
+sql = "select meme_id, AVG(views)  from meme_data group by meme_id having count(*) > 30 order by avg(views) DESC"
+
+df = pd.read_sql(sql, conn)
+
+xlab = list(df['meme_id'])
+ax = df['AVG(views)'].plot(kind='bar', title ="memes by average views", figsize=(23,10))
+ax.set_xticklabels(df['meme_id'])
+ax.set_ylabel("views", fontsize=12)
+
+plt.savefig("stats/meme_by_view.jpg")
+plt.show()
+
+
+
+###### plot 2
+
+sql = "select meme_id, count(*) from meme_data group by meme_id having count(*) > 30 order by avg(views) DESC"
+df = pd.read_sql(sql, conn)
+
+
+ax2 =df['count(*)'].plot(kind='bar',title="number of memes posted",figsize=(23,10))
+ax2.set_xticklabels(df['meme_id'])
+ax2.set_ylabel("counts", fontsize=12)
+ax2.set_ylabel("Memes", fontsize=12)
+plt.savefig("stats/meme_by_count.jpg")
+
+
+
+#### plot 3
+
+sql = "select meme_id, AVG(ups), AVG(downs),AVG(comments) from meme_data group by meme_id having count(*) > 30 order by avg(views) DESC"
+
+#sql = "select meme_id, count(*) from meme_data group by meme_id having count(*) > 10"
+df = pd.read_sql(sql, conn)
+ax3 = df[['AVG(comments)','AVG(ups)','AVG(downs)']].plot(kind='bar', title ="memes by average comments, average upvotes and average downvotes", figsize=(23,10))
+ax3.set_xticklabels(df['meme_id'])
+ax3.set_ylabel("average numbers", fontsize=12)
+lines, labels = ax3.get_legend_handles_labels()
+ax3.legend(lines, labels, loc='best')
+plt.savefig("stats/meme_by_averages.jpg")
+plt.show()
+
+sql = "select *  from meme_data"
+
+df2 = pd.read_sql(sql, conn)
+
+##plot 4
+
+sql = "select topic from meme_data group by meme_id having AVG(views) > 5000"
+
+
+df = pd.read_sql(sql, conn)
+
+
+
+df.topic.value_counts().plot(kind='bar')
+plt.savefig("stats/Viral_Topics.jpg")
+
+
+
+### plot 5
+
+sql = "select datetime from meme_data where views >5000"
+df = pd.read_sql(sql, conn)
+
+
+df.datetime = sorted(df.datetime.astype("datetime64"))
+ax4 = df.groupby(df.datetime.dt.hour).count().plot(kind="bar", title="Hours that viral images are posted at")
+ax4.set_xlabel("Hours", fontsize=12)
+plt.savefig("stats/Viral_times_day.jpg")
+
+##### plot 6
+
+
+sql = "select datetime from meme_data"
+df = pd.read_sql(sql, conn)
+
+xlab = sorted(set(df['datetime']))
+
+
+df.datetime = sorted(df.datetime.astype("datetime64"))
+ax5 = df.groupby(df.datetime.dt.day).count().plot(kind="bar", title="Hours that images are posted at",figsize= (10,10))
+ax5.set_xlabel("dates by hour", fontsize=12)
+ax5.set_ylabel(" number of images posted", fontsize=12)
+ax5.set_xticklabels(xlab)
+
+plt.savefig("stats/images_by_date.jpg")
